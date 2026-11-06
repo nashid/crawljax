@@ -1,6 +1,7 @@
 package com.crawljax.core;
 
 import com.crawljax.browser.EmbeddedBrowser;
+import com.crawljax.browser.WebDriverBackedEmbeddedBrowser;
 import com.crawljax.condition.browserwaiter.WaitConditionChecker;
 import com.crawljax.core.configuration.CrawlRules;
 import com.crawljax.core.configuration.CrawlScope;
@@ -315,6 +316,7 @@ public class Crawler {
             // The URL load plugins, such as a login, run before the landing page is read, as they
             // do for the index state, so the page is compared once it is ready.
             plugins.runOnUrlLoadPlugins(context);
+            waitUntilPageIsStable();
             // Checks the landing page for URL and sets the current page accordingly
             checkOnURLState(previousState);
         } else {
@@ -1364,6 +1366,16 @@ public class Crawler {
     }
 
     /**
+     * Waits, when the browser is configured to, until the page stops changing, so that a page the
+     * URL load plugins navigated is read once it has rendered.
+     */
+    private void waitUntilPageIsStable() {
+        if (browser instanceof WebDriverBackedEmbeddedBrowser) {
+            ((WebDriverBackedEmbeddedBrowser) browser).waitUntilStable();
+        }
+    }
+
+    /**
      * @param newStatesFound the number of new states the current task has found.
      * @return whether the task should end so that the crawler returns to the queue of states with
      *     unfired actions.
@@ -1548,6 +1560,7 @@ public class Crawler {
         plugins.runOnUrlFirstLoadPlugins(context);
 
         plugins.runOnUrlLoadPlugins(context);
+        waitUntilPageIsStable();
         StateVertex index = vertexFactory.createIndex(
                 url.toString(), browser.getStrippedDom(), stateComparator.getStrippedDom(browser), browser);
 

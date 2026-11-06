@@ -84,6 +84,11 @@ public final class WebDriverBackedEmbeddedBrowser implements EmbeddedBrowser {
     /** Patterns removed from the stripped DOM, so that text that differs on every load does not make a new state. */
     private ImmutableList<Pattern> ignoredInComparison = ImmutableList.of();
 
+    /** Interval and limit of the wait until the page stops changing; zero disables it. */
+    private long settlePollMs = 0;
+
+    private long settleMaxMs = 0;
+
     private final WebDriver browser;
     private int pixelDensity = -1;
     /**
@@ -281,6 +286,7 @@ public final class WebDriverBackedEmbeddedBrowser implements EmbeddedBrowser {
         try {
             browser.navigate().to(url.toString());
             Thread.sleep(this.crawlWaitReload);
+            waitUntilStable();
             handlePopups();
         } catch (WebDriverException e) {
             throwIfConnectionException(e);
@@ -354,6 +360,7 @@ public final class WebDriverBackedEmbeddedBrowser implements EmbeddedBrowser {
         }
 
         Thread.sleep(this.crawlWaitEvent);
+        waitUntilStable();
         return true;
     }
 
@@ -454,6 +461,63 @@ public final class WebDriverBackedEmbeddedBrowser implements EmbeddedBrowser {
         }
         this.ignoredInComparison = patterns.build();
         return this;
+    }
+
+    /**
+     * Makes every wait after a reload or an event continue until the page stops changing: the size
+     * of the document and its number of elements are read every {@code pollMs} until two
+     * consecutive readings agree, for at most {@code maxMs}. Zero disables the wait.
+     *
+     * @param pollMs the interval between two readings.
+     * @param maxMs the longest additional wait.
+     * @return this browser.
+     */
+    public WebDriverBackedEmbeddedBrowser settleUntilStable(long pollMs, long maxMs) {
+        Preconditions.checkArgument(pollMs >= 0 && maxMs >= 0, "The settle wait must be zero or more");
+        this.settlePollMs = pollMs;
+        this.settleMaxMs = maxMs;
+        return this;
+    }
+
+    /**
+     * Waits until two consecutive readings of the page agree, as configured by
+     * {@link #settleUntilStable(long, long)}.
+     *
+     * @return the number of readings taken.
+     */
+    public int waitUntilStable() {
+        if (settlePollMs <= 0 || !(browser instanceof JavascriptExecutor)) {
+            return 0;
+        }
+        long deadline = System.currentTimeMillis() + settleMaxMs;
+        String last = pageReading();
+        int readings = 1;
+        try {
+            while (System.currentTimeMillis() < deadline) {
+                Thread.sleep(settlePollMs);
+                String now = pageReading();
+                readings++;
+                if (now.equals(last)) {
+                    return readings;
+                }
+                last = now;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return readings;
+        }
+        LOGGER.info("The page was still changing after {} ms", settleMaxMs);
+        return readings;
+    }
+
+    private String pageReading() {
+        try {
+            return String.valueOf(((JavascriptExecutor) browser)
+                    .executeScript("return document.documentElement.outerHTML.length + ':'"
+                            + " + document.getElementsByTagName('*').length;"));
+        } catch (WebDriverException e) {
+            return "";
+        }
     }
 
     /**
