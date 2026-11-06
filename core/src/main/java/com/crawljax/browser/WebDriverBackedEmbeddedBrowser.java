@@ -14,6 +14,7 @@ import com.crawljax.forms.InputValue;
 import com.crawljax.forms.RandomInputValueGenerator;
 import com.crawljax.util.DomUtils;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.io.Files;
 import io.github.bonigarcia.wdm.WebDriverManager;
@@ -79,6 +80,10 @@ public final class WebDriverBackedEmbeddedBrowser implements EmbeddedBrowser {
     private static final int BROWSER_CLOSE_TIMEOUT_SECS = 20;
 
     private final ImmutableSortedSet<String> filterAttributes;
+
+    /** Patterns removed from the stripped DOM, so that text that differs on every load does not make a new state. */
+    private ImmutableList<Pattern> ignoredInComparison = ImmutableList.of();
+
     private final WebDriver browser;
     private int pixelDensity = -1;
     /**
@@ -192,7 +197,8 @@ public final class WebDriverBackedEmbeddedBrowser implements EmbeddedBrowser {
      */
     public static WebDriverBackedEmbeddedBrowser withDriver(
             WebDriver driver, ImmutableSortedSet<String> filterAttributes, long crawlWaitEvent, long crawlWaitReload) {
-        return new WebDriverBackedEmbeddedBrowser(driver, filterAttributes, crawlWaitEvent, crawlWaitReload);
+        // The constructor takes the reload wait first.
+        return new WebDriverBackedEmbeddedBrowser(driver, filterAttributes, crawlWaitReload, crawlWaitEvent);
     }
 
     /**
@@ -211,8 +217,9 @@ public final class WebDriverBackedEmbeddedBrowser implements EmbeddedBrowser {
             long crawlWaitEvent,
             long crawlWaitReload,
             IgnoreFrameChecker ignoreFrameChecker) {
+        // The constructor takes the reload wait first.
         return new WebDriverBackedEmbeddedBrowser(
-                driver, filterAttributes, crawlWaitEvent, crawlWaitReload, ignoreFrameChecker);
+                driver, filterAttributes, crawlWaitReload, crawlWaitEvent, ignoreFrameChecker);
     }
 
     /**
@@ -427,7 +434,33 @@ public final class WebDriverBackedEmbeddedBrowser implements EmbeddedBrowser {
         htmlFormatted = m.replaceAll("");
 
         htmlFormatted = filterAttributes(htmlFormatted);
+        for (Pattern ignored : ignoredInComparison) {
+            htmlFormatted = ignored.matcher(htmlFormatted).replaceAll("");
+        }
         return htmlFormatted;
+    }
+
+    /**
+     * Sets the regular expressions whose matches are removed from the stripped DOM before states
+     * are compared, such as identifiers a framework generates on every page load.
+     *
+     * @param regexes the regular expressions.
+     * @return this browser.
+     */
+    public WebDriverBackedEmbeddedBrowser ignoreInComparison(List<String> regexes) {
+        ImmutableList.Builder<Pattern> patterns = ImmutableList.builder();
+        for (String regex : regexes) {
+            patterns.add(Pattern.compile(regex, Pattern.DOTALL));
+        }
+        this.ignoredInComparison = patterns.build();
+        return this;
+    }
+
+    /**
+     * @return the patterns removed from the stripped DOM before states are compared.
+     */
+    public ImmutableList<Pattern> getIgnoredInComparison() {
+        return ignoredInComparison;
     }
 
     /**
@@ -441,7 +474,8 @@ public final class WebDriverBackedEmbeddedBrowser implements EmbeddedBrowser {
         for (String attribute : this.filterAttributes) {
             String regex = "\\s" + attribute + "=\"[^\"]*\"";
             Pattern p = Pattern.compile(regex, Pattern.CASE_INSENSITIVE);
-            Matcher m = p.matcher(html);
+            // Each attribute is removed from the result of the previous one.
+            Matcher m = p.matcher(filteredHtml);
             filteredHtml = m.replaceAll("");
         }
         return filteredHtml;
@@ -890,7 +924,7 @@ public final class WebDriverBackedEmbeddedBrowser implements EmbeddedBrowser {
     /**
      * @return the period to wait after an event.
      */
-    private long getCrawlWaitEvent() {
+    long getCrawlWaitEvent() {
         return crawlWaitEvent;
     }
 
@@ -904,7 +938,7 @@ public final class WebDriverBackedEmbeddedBrowser implements EmbeddedBrowser {
     /**
      * @return the period to wait after a reload.
      */
-    private long getCrawlWaitReload() {
+    long getCrawlWaitReload() {
         return crawlWaitReload;
     }
 

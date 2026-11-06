@@ -312,11 +312,14 @@ public class Crawler {
 
         if (!UseEquivalentReset || !equivalentResetDone) {
             browser.goToUrl(url);
+            // The URL load plugins, such as a login, run before the landing page is read, as they
+            // do for the index state, so the page is compared once it is ready.
+            plugins.runOnUrlLoadPlugins(context);
             // Checks the landing page for URL and sets the current page accordingly
             checkOnURLState(previousState);
+        } else {
+            plugins.runOnUrlLoadPlugins(context);
         }
-
-        plugins.runOnUrlLoadPlugins(context);
         crawlDepth.set(0);
     }
 
