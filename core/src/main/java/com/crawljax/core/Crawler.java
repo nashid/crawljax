@@ -65,6 +65,7 @@ public class Crawler {
     private static final int DUPLICATE_EVENT_SEED = 100000;
     private final AtomicInteger crawlDepth = new AtomicInteger();
     private final int maxDepth;
+    private final int maxNewStatesPerTask;
     private final EmbeddedBrowser browser;
     private final CrawlerContext context;
     private final StateComparator stateComparator;
@@ -121,6 +122,7 @@ public class Crawler {
         this.plugins = plugins;
         this.crawlRules = config.getCrawlRules();
         this.maxDepth = config.getMaximumDepth();
+        this.maxNewStatesPerTask = config.getCrawlRules().getMaxNewStatesPerTask();
         this.stateComparator = stateComparator;
         this.candidateActionCache = candidateActionCache;
         this.waitConditionChecker = waitConditionChecker;
@@ -1215,6 +1217,7 @@ public class Crawler {
     private void crawlThroughActionsOld() {
         boolean interrupted = Thread.interrupted();
         CandidateCrawlAction action = candidateActionCache.pollActionOrNull(stateMachine.getCurrentState());
+        int newStatesFound = 0;
         while (action != null && !interrupted) {
             boolean newStateFound = false;
             CandidateElement element = action.getCandidateElement();
@@ -1231,7 +1234,13 @@ public class Crawler {
                 LOG.info("Element {} not clicked because not all crawl conditions were satisfied", element);
             }
 
+            if (newStateFound) {
+                newStatesFound++;
+            }
             if (newStateFound && stateMachine.getCurrentState().hasNearDuplicate()) {
+                action = null;
+            } else if (taskLimitReached(newStatesFound)) {
+                LOG.info("Found {} new states in this task. Returning to the queue", newStatesFound);
                 action = null;
             } else {
                 // We have to check if we are still in the same state.
@@ -1277,6 +1286,7 @@ public class Crawler {
         boolean interrupted = Thread.interrupted();
         CandidateCrawlAction action =
                 candidateActionCache.pollActionOrNull(stateMachine, context.getFragmentManager(), afterBacktrack);
+        int newStatesFound = 0;
 
         while (action != null && !interrupted) {
             boolean newStateFound = false;
@@ -1321,6 +1331,13 @@ public class Crawler {
             }
 
             afterBacktrack = false;
+            if (newStateFound) {
+                newStatesFound++;
+            }
+            if (taskLimitReached(newStatesFound)) {
+                LOG.info("Found {} new states in this task. Returning to the queue", newStatesFound);
+                break;
+            }
             action = candidateActionCache.pollActionOrNull(stateMachine, context.getFragmentManager(), afterBacktrack);
             //			}
             interrupted = Thread.interrupted();
@@ -1341,6 +1358,15 @@ public class Crawler {
             }
             interruptThread();
         }
+    }
+
+    /**
+     * @param newStatesFound the number of new states the current task has found.
+     * @return whether the task should end so that the crawler returns to the queue of states with
+     *     unfired actions.
+     */
+    boolean taskLimitReached(int newStatesFound) {
+        return maxNewStatesPerTask > 0 && newStatesFound >= maxNewStatesPerTask;
     }
 
     private long getBackTrackingEventableId() {

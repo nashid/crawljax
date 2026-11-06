@@ -60,6 +60,7 @@ public class CrawlRules {
     private int maxRepeatExploredActions = 2;
     private FragmentRules usefulFragmentRules = new FragmentRules();
     private boolean restoreConnectedEdges = false;
+    private int maxNewStatesPerTask = 0;
 
     private CrawlRules() {}
 
@@ -168,6 +169,15 @@ public class CrawlRules {
 
     public boolean isDelayNearDuplicateCrawling() {
         return delayNearDuplicateCrawling;
+    }
+
+    /**
+     * @return the number of new states one crawl task may find before the crawler returns to the
+     *     queue of states with unfired actions. Zero means no limit, which is depth first
+     *     exploration.
+     */
+    public int getMaxNewStatesPerTask() {
+        return maxNewStatesPerTask;
     }
 
     public boolean isApplyNonSelAdvantage() {
@@ -332,6 +342,20 @@ public class CrawlRules {
 
         public CrawlRulesBuilder setDelayNearDuplicateCrawling(boolean delayNearDuplicateCrawling) {
             crawlRules.delayNearDuplicateCrawling = delayNearDuplicateCrawling;
+            return this;
+        }
+
+        /**
+         * Limits how many new states one crawl task may find before the crawler returns to the
+         * queue of states with unfired actions. The queue is ordered by discovery, so a limit of
+         * one explores breadth first. Zero, the default, keeps depth first exploration.
+         *
+         * @param maxNewStatesPerTask the limit, zero or more.
+         * @return this builder.
+         */
+        public CrawlRulesBuilder setMaxNewStatesPerTask(int maxNewStatesPerTask) {
+            Preconditions.checkArgument(maxNewStatesPerTask >= 0, "The limit must be zero or more");
+            crawlRules.maxNewStatesPerTask = maxNewStatesPerTask;
             return this;
         }
 

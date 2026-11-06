@@ -31,6 +31,23 @@ public class CrawljaxConfigurationBuilderTest {
         return CrawljaxConfiguration.builderFor("http://localhost");
     }
 
+    @Test
+    public void newStatesPerTaskAreUnlimitedByDefault() {
+        assertThat(testBuilder().build().getCrawlRules().getMaxNewStatesPerTask(), is(0));
+    }
+
+    @Test
+    public void newStatesPerTaskCanBeLimited() {
+        CrawljaxConfigurationBuilder builder = testBuilder();
+        builder.crawlRules().setMaxNewStatesPerTask(1);
+        assertThat(builder.build().getCrawlRules().getMaxNewStatesPerTask(), is(1));
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void negativeNewStatesPerTaskIsNotAllowed() {
+        testBuilder().crawlRules().setMaxNewStatesPerTask(-1);
+    }
+
     @Test(expected = IllegalArgumentException.class)
     public void negativeDepthIsNotAllowed() {
         testBuilder().setMaximumDepth(-1).build();
